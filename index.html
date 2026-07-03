@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Iris 데이터 분석 대시보드</title>
+    <!-- Tailwind CSS (스타일링) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js (데이터 시각화) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- 폰트 적용 (Pretendard) -->
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" />
+    <style>
+        body { font-family: 'Pretendard', sans-serif; }
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 36px; height: 36px;
+            border-radius: 50%;
+            border-left-color: #3b82f6;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        /* 스크롤바 커스텀 */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        /* 보고서 인쇄(Print)용 전용 스타일 */
+        @media print {
+            body { background-color: #ffffff; }
+            .no-print { display: none !important; }
+            .shadow-sm, .shadow-md { box-shadow: none !important; border-color: #e2e8f0 !important; }
+            .print-break-inside-avoid { break-inside: avoid; page-break-inside: avoid; }
+            /* 인쇄 시 테이블 내용이 모두 보이도록 스크롤 영역 해제 */
+            .overflow-x-auto, .max-h-[300px] { overflow: visible !important; max-height: none !important; }
+            canvas { max-width: 100% !important; }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+
+    <div class="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+        
+        <!-- 헤더 영역 -->
+        <header class="mb-8">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                    <h1 class="text-3xl font-bold text-slate-900 flex items-center gap-2">
+                        🌸 Iris 데이터 분석 대시보드
+                    </h1>
+                    <p class="text-slate-500 mt-2">사이킷런(scikit-learn)과 동일한 붓꽃 데이터셋을 활용한 인터랙티브 시각화 앱</p>
+                </div>
+                <button onclick="window.print()" class="no-print bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold py-2 px-4 rounded-lg shadow-sm transition flex items-center gap-2 w-fit">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>
+                    보고서 출력
+                </button>
+            </div>
+        </header>
+
+        <!-- 로딩 표시기 -->
+        <div id="loading" class="flex flex-col items-center justify-center py-20">
+            <div class="spinner mb-4"></div>
+            <p class="text-slate-500 font-medium">데이터를 불러오는 중입니다...</p>
+        </div>
+
+        <!-- 메인 콘텐츠 (데이터 로드 후 표시) -->
+        <div id="app-content" class="hidden space-y-6">
+            
+            <!-- 컨트롤 패널 -->
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-wrap gap-4 items-end">
+                <div class="flex-1 min-w-[200px]">
+                    <label class="block text-sm font-semibold text-slate-700 mb-2">X축 (가로)</label>
+                    <select id="x-axis" class="w-full bg-slate-50 border border-slate-200 text-slate-700 rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 outline-none transition">
+                        <option value="sepal_length" selected>꽃받침 길이 (Sepal Length)</option>
+                        <option value="sepal_width">꽃받침 너비 (Sepal Width)</option>
+                        <option value="petal_length">꽃잎 길이 (Petal Length)</option>
+                        <option value="petal_width">꽃잎 너비 (Petal Width)</option>
+                    </select>
+                </div>
+                <div class="flex-1 min-w-[200px]">
+                    <label class="block text-sm font-semibold text-slate-700 mb-2">Y축 (세로)</label>
+                    <select id="y-axis" class="w-full bg-slate-50 border border-slate-200 text-slate-700 rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 outline-none transition">
+                        <option value="sepal_length">꽃받침 길이 (Sepal Length)</option>
+                        <option value="sepal_width" selected>꽃받침 너비 (Sepal Width)</option>
+                        <option value="petal_length">꽃잎 길이 (Petal Length)</option>
+                        <option value="petal_width">꽃잎 너비 (Petal Width)</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- 차트 및 통계 그리드 -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 print-break-inside-avoid">
+                
+                <!-- 산점도 차트 -->
+                <div class="lg:col-span-2 bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                    <h2 class="text-lg font-bold text-slate-800 mb-4">특성별 산점도 (Scatter Plot)</h2>
+                    <div class="relative h-[400px] w-full">
+                        <canvas id="scatterChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- 요약 통계 -->
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
+                    <h2 class="text-lg font-bold text-slate-800 mb-4">품종별 요약 통계 (평균)</h2>
+                    <div id="stats-container" class="flex-1 flex flex-col gap-4">
+                        <!-- 통계 카드가 JavaScript에 의해 여기에 렌더링됩니다 -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- 의사결정트리 기반 예측기 -->
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 print-break-inside-avoid">
+                <h2 class="text-lg font-bold text-slate-800 mb-2 flex items-center gap-2">
+                    🤖 실시간 붓꽃 품종 예측기 (Decision Tree)
+                </h2>
+                <p class="text-sm text-slate-500 mb-6">불러온 데이터를 바탕으로 웹 브라우저에서 직접 학습된 의사결정트리 알고리즘이 품종을 예측합니다.</p>
+                
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1">꽃받침 길이 (cm)</label>
+                        <input type="number" id="pred-sl" value="5.1" step="0.1" class="w-full bg-slate-50 border border-slate-200 text-slate-700 rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 outline-none transition">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1">꽃받침 너비 (cm)</label>
+                        <input type="number" id="pred-sw" value="3.5" step="0.1" class="w-full bg-slate-50 border border-slate-200 text-slate-700 rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 outline-none transition">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1">꽃잎 길이 (cm)</label>
+                        <input type="number" id="pred-pl" value="1.4" step="0.1" class="w-full bg-slate-50 border border-slate-200 text-slate-700 rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 outline-none transition">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1">꽃잎 너비 (cm)</label>
+                        <input type="number" id="pred-pw" value="0.2" step="0.1" class="w-full bg-slate-50 border border-slate-200 text-slate-700 rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 outline-none transition">
+                    </div>
+                </div>
+                
+                <div class="flex flex-wrap items-center gap-4">
+                    <button onclick="runPrediction()" class="bg-slate-800 hover:bg-slate-700 text-white font-bold py-2.5 px-6 rounded-lg transition shadow-md whitespace-nowrap">
+                        결과 예측하기
+                    </button>
+                    <div id="prediction-result" class="flex-1 text-lg font-bold min-h-[44px] flex items-center border-l-2 border-slate-100 pl-4">
+                        <span class="text-slate-400 text-sm font-normal">좌측 버튼을 눌러 예측 결과를 확인하세요.</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 데이터 테이블 -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden print-break-inside-avoid">
+                <div class="p-5 border-b border-slate-100 flex justify-between items-center">
+                    <h2 class="text-lg font-bold text-slate-800">원시 데이터 (Raw Data)</h2>
+                    <span class="text-sm text-slate-500 bg-slate-100 px-3 py-1 rounded-full">총 150개 샘플</span>
+                </div>
+                <div class="overflow-x-auto max-h-[300px]">
+                    <table class="w-full text-sm text-left text-slate-600">
+                        <thead class="text-xs text-slate-700 uppercase bg-slate-50 sticky top-0 shadow-sm">
+                            <tr>
+                                <th scope="col" class="px-6 py-3">ID</th>
+                                <th scope="col" class="px-6 py-3">꽃받침 길이 (cm)</th>
+                                <th scope="col" class="px-6 py-3">꽃받침 너비 (cm)</th>
+                                <th scope="col" class="px-6 py-3">꽃잎 길이 (cm)</th>
+                                <th scope="col" class="px-6 py-3">꽃잎 너비 (cm)</th>
+                                <th scope="col" class="px-6 py-3">품종 (Species)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="data-table-body" class="divide-y divide-slate-100">
+                            <!-- 테이블 행이 JavaScript에 의해 여기에 렌더링됩니다 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // 전역 변수 설정
+        let irisData = [];
+        let scatterChart = null;
+
+        const featureNames = {
+            'sepal_length': '꽃받침 길이',
+            'sepal_width': '꽃받침 너비',
+            'petal_length': '꽃잎 길이',
+            'petal_width': '꽃잎 너비'
+        };
+
+        const speciesConfig = {
+            'setosa': { name: 'Setosa', color: 'rgba(239, 68, 68, 0.7)', border: 'rgb(239, 68, 68)', bgClass: 'bg-red-50 text-red-600 border-red-200' },
+            'versicolor': { name: 'Versicolor', color: 'rgba(59, 130, 246, 0.7)', border: 'rgb(59, 130, 246)', bgClass: 'bg-blue-50 text-blue-600 border-blue-200' },
+            'virginica': { name: 'Virginica', color: 'rgba(16, 185, 129, 0.7)', border: 'rgb(16, 185, 129)', bgClass: 'bg-emerald-50 text-emerald-600 border-emerald-200' }
+        };
+
+        // 앱 초기화
+        async function initApp() {
+            try {
+                // seaborn-data 저장소에서 iris.csv 가져오기 (사이킷런 데이터셋과 동일)
+                const response = await fetch('https://raw.githubusercontent.com/mwaskom/seaborn-data/master/iris.csv');
+                if (!response.ok) throw new Error('네트워크 응답이 올바르지 않습니다.');
+                const csvText = await response.text();
+                
+                // CSV 파싱
+                irisData = parseCSV(csvText);
+                
+                // 로딩 숨기고 컨텐츠 표시
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('app-content').classList.remove('hidden');
+
+                // 초기 데이터 렌더링
+                updateDashboard();
+                renderTable();
+
+                // 의사결정트리 모델 학습 수행
+                trainModel();
+
+                // 이벤트 리스너 등록
+                document.getElementById('x-axis').addEventListener('change', updateDashboard);
+                document.getElementById('y-axis').addEventListener('change', updateDashboard);
+
+            } catch (error) {
+                console.error('데이터 로딩 오류:', error);
+                document.getElementById('loading').innerHTML = `
+                    <div class="text-red-500 font-bold mb-2">데이터를 불러오는데 실패했습니다.</div>
+                    <div class="text-sm text-slate-500">${error.message}</div>
+                `;
+            }
+        }
+
+        // CSV 문자열을 JavaScript 객체 배열로 변환하는 함수
+        function parseCSV(csv) {
+            const lines = csv.trim().split('\n');
+            const headers = lines[0].split(',').map(h => h.trim());
+            const data = [];
+            
+            for (let i = 1; i < lines.length; i++) {
+                const values = lines[i].split(',');
+                if (values.length === headers.length) {
+                    const row = {};
+                    headers.forEach((header, index) => {
+                        const val = values[index].trim();
+                        // species 열은 문자열로, 나머지는 숫자로 변환
+                        row[header] = isNaN(val) ? val : parseFloat(val);
+                    });
+                    data.push(row);
+                }
+            }
+            return data;
+        }
+
+        // 대시보드 업데이트 (차트 및 통계)
+        function updateDashboard() {
+            const xAxis = document.getElementById('x-axis').value;
+            const yAxis = document.getElementById('y-axis').value;
+            
+            drawChart(xAxis, yAxis);
+            updateStats(xAxis, yAxis);
+        }
+
+        // Chart.js를 이용한 산점도 그리기
+        function drawChart(xAxis, yAxis) {
+            const ctx = document.getElementById('scatterChart').getContext('2d');
+            
+            // 기존 차트가 있다면 파괴
+            if (scatterChart) {
+                scatterChart.destroy();
+            }
+
+            // 품종별로 데이터 분리
+            const datasets = Object.keys(speciesConfig).map(species => {
+                const speciesData = irisData.filter(d => d.species === species);
+                return {
+                    label: speciesConfig[species].name,
+                    data: speciesData.map(d => ({ x: d[xAxis], y: d[yAxis] })),
+                    backgroundColor: speciesConfig[species].color,
+                    borderColor: speciesConfig[species].border,
+                    borderWidth: 1,
+                    pointRadius: 6,
+                    pointHoverRadius: 8
+                };
+            });
+
+            scatterChart = new Chart(ctx, {
+                type: 'scatter',
+                data: { datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: (context) => {
+                                    return `${context.dataset.label}: (${featureNames[xAxis]} ${context.parsed.x}, ${featureNames[yAxis]} ${context.parsed.y})`;
+                                }
+                            }
+                        },
+                        legend: {
+                            position: 'bottom',
+                            labels: { usePointStyle: true, padding: 20 }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: { display: true, text: featureNames[xAxis] + ' (cm)', font: { weight: 'bold' } },
+                            grid: { color: '#f1f5f9' }
+                        },
+                        y: {
+                            title: { display: true, text: featureNames[yAxis] + ' (cm)', font: { weight: 'bold' } },
+                            grid: { color: '#f1f5f9' }
+                        }
+                    }
+                }
+            });
+        }
+
+        // 품종별 평균 통계 계산 및 표시
+        function updateStats(xAxis, yAxis) {
+            const container = document.getElementById('stats-container');
+            container.innerHTML = '';
+
+            Object.keys(speciesConfig).forEach(species => {
+                const speciesData = irisData.filter(d => d.species === species);
+                
+                // 평균 계산
+                const avgX = (speciesData.reduce((sum, d) => sum + d[xAxis], 0) / speciesData.length).toFixed(2);
+                const avgY = (speciesData.reduce((sum, d) => sum + d[yAxis], 0) / speciesData.length).toFixed(2);
+                
+                const config = speciesConfig[species];
+
+                const cardHtml = `
+                    <div class="p-4 rounded-xl border ${config.bgClass} flex items-center justify-between transition-transform hover:scale-[1.02]">
+                        <div>
+                            <div class="font-bold text-lg">${config.name}</div>
+                            <div class="text-xs opacity-80 mt-1">평균 측정값</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-sm font-semibold">${featureNames[xAxis]}: <span class="text-lg">${avgX}</span> cm</div>
+                            <div class="text-sm font-semibold">${featureNames[yAxis]}: <span class="text-lg">${avgY}</span> cm</div>
+                        </div>
+                    </div>
+                `;
+                container.innerHTML += cardHtml;
+            });
+        }
+
+        // 원시 데이터 테이블 렌더링
+        function renderTable() {
+            const tbody = document.getElementById('data-table-body');
+            let rowsHtml = '';
+
+            irisData.forEach((row, index) => {
+                // 품종 뱃지 스타일링
+                let badgeClass = "bg-slate-100 text-slate-800";
+                if(row.species === 'setosa') badgeClass = "bg-red-100 text-red-800";
+                if(row.species === 'versicolor') badgeClass = "bg-blue-100 text-blue-800";
+                if(row.species === 'virginica') badgeClass = "bg-emerald-100 text-emerald-800";
+
+                rowsHtml += `
+                    <tr class="bg-white hover:bg-slate-50 transition">
+                        <td class="px-6 py-4 font-medium text-slate-900">${index + 1}</td>
+                        <td class="px-6 py-4">${row.sepal_length}</td>
+                        <td class="px-6 py-4">${row.sepal_width}</td>
+                        <td class="px-6 py-4">${row.petal_length}</td>
+                        <td class="px-6 py-4">${row.petal_width}</td>
+                        <td class="px-6 py-4">
+                            <span class="px-2.5 py-1 rounded-full text-xs font-semibold ${badgeClass}">
+                                ${row.species}
+                            </span>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            tbody.innerHTML = rowsHtml;
+        }
+
+        // ==========================================
+        // 의사결정트리(CART) 알고리즘 직접 구현
+        // ==========================================
+        let decisionTreeModel = null;
+
+        function trainModel() {
+            // 최대 트리 깊이를 4로 설정하여 데이터 과적합(Overfitting)을 방지합니다.
+            decisionTreeModel = buildTree(irisData, 0, 4); 
+            console.log("Decision Tree 모델 학습 완료!", decisionTreeModel);
+        }
+
+        // 지니 불순도(Gini Impurity) 계산 함수
+        function calculateGini(data) {
+            const counts = {};
+            data.forEach(row => counts[row.species] = (counts[row.species] || 0) + 1);
+            let impurity = 1;
+            for (let species in counts) {
+                const prob = counts[species] / data.length;
+                impurity -= prob * prob;
+            }
+            return impurity;
+        }
+
+        // 가장 데이터를 잘 나누는 기준점(Threshold) 찾기
+        function getBestSplit(data) {
+            let bestGini = Infinity;
+            let bestSplit = null;
+            const features = ['sepal_length', 'sepal_width', 'petal_length', 'petal_width'];
+
+            features.forEach(feature => {
+                // 고유값들을 정렬하여 임계값 후보 생성
+                const values = [...new Set(data.map(d => d[feature]))].sort((a,b) => a-b);
+                
+                for (let i = 0; i < values.length - 1; i++) {
+                    const threshold = (values[i] + values[i+1]) / 2;
+                    
+                    // 기준값에 따라 좌/우 노드로 분할
+                    const left = data.filter(d => d[feature] <= threshold);
+                    const right = data.filter(d => d[feature] > threshold);
+
+                    if (left.length === 0 || right.length === 0) continue;
+
+                    // 가중 평균 지니 불순도 계산
+                    const giniLeft = calculateGini(left);
+                    const giniRight = calculateGini(right);
+                    const giniSplit = (left.length / data.length) * giniLeft + (right.length / data.length) * giniRight;
+
+                    if (giniSplit < bestGini) {
+                        bestGini = giniSplit;
+                        bestSplit = { feature, threshold, leftData: left, rightData: right };
+                    }
+                }
+            });
+            return bestSplit;
+        }
+
+        // 데이터에서 가장 빈도수가 높은(다수결) 품종 반환
+        function getMajorityClass(data) {
+            const counts = {};
+            data.forEach(row => counts[row.species] = (counts[row.species] || 0) + 1);
+            return Object.keys(counts).reduce((a, b) => counts[a] > counts[b] ? a : b);
+        }
+
+        // 재귀적으로 트리를 빌드하는 메인 함수
+        function buildTree(data, depth, maxDepth) {
+            const targets = [...new Set(data.map(d => d.species))];
+            
+            // 1. 모든 데이터가 같은 클래스이거나
+            // 2. 최대 깊이에 도달했을 때 리프 노드(말단)를 반환
+            if (targets.length === 1) return { isLeaf: true, prediction: targets[0] };
+            if (depth >= maxDepth || data.length < 2) return { isLeaf: true, prediction: getMajorityClass(data) };
+
+            // 최적의 분할 지점 획득
+            const bestSplit = getBestSplit(data);
+            if (!bestSplit) return { isLeaf: true, prediction: getMajorityClass(data) };
+
+            return {
+                isLeaf: false,
+                feature: bestSplit.feature,
+                threshold: bestSplit.threshold,
+                left: buildTree(bestSplit.leftData, depth + 1, maxDepth),
+                right: buildTree(bestSplit.rightData, depth + 1, maxDepth)
+            };
+        }
+
+        // 생성된 트리를 탐색하며 예측하는 함수
+        function predictSingle(node, row) {
+            if (node.isLeaf) return node.prediction;
+            if (row[node.feature] <= node.threshold) {
+                return predictSingle(node.left, row);
+            } else {
+                return predictSingle(node.right, row);
+            }
+        }
+
+        // UI에서 버튼 클릭 시 실행되는 함수
+        function runPrediction() {
+            if (!decisionTreeModel) {
+                alert("아직 데이터를 불러오거나 모델을 학습하지 못했습니다.");
+                return;
+            }
+
+            // 사용자 입력값 객체화
+            const inputRow = {
+                sepal_length: parseFloat(document.getElementById('pred-sl').value),
+                sepal_width: parseFloat(document.getElementById('pred-sw').value),
+                petal_length: parseFloat(document.getElementById('pred-pl').value),
+                petal_width: parseFloat(document.getElementById('pred-pw').value)
+            };
+
+            // 예측 수행
+            const predictedSpecies = predictSingle(decisionTreeModel, inputRow);
+            const config = speciesConfig[predictedSpecies];
+            
+            // UI에 결과 표시
+            const resultDiv = document.getElementById('prediction-result');
+            resultDiv.innerHTML = `
+                <span class="text-slate-600 font-medium">인공지능 예측 결과:</span> 
+                <span class="inline-flex items-center justify-center px-5 py-1.5 rounded-full text-white ml-3 shadow-md transform transition-all scale-105" style="background-color: ${config.border}">
+                    ✨ ${config.name}
+                </span>
+            `;
+        }
+
+        // 페이지 로드 시 앱 초기화 실행
+        window.addEventListener('DOMContentLoaded', initApp);
+
+    </script>
+</body>
+</html>
